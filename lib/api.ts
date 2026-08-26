@@ -9,7 +9,20 @@ export async function uploadPDF(file: File) {
     body: formData,
   });
 
-  if (!res.ok) throw new Error("Failed to upload and process PDF");
+  if (!res.ok) {
+    let detail = "Failed to upload and process PDF";
+
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string" && body.detail.trim()) {
+        detail = body.detail;
+      }
+    } catch {
+      // Keep the fallback message when the backend does not return JSON.
+    }
+
+    throw new Error(detail);
+  }
   
   // Optionally return the response JSON containing flashcards if your backend sends them back directly
   return await res.json();

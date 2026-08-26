@@ -1,10 +1,26 @@
+from rag.retrieve import retrieve_relevant_chunks
+def clean_text(text):
+    return (
+        text.replace("â€“", "—")
+            .replace("â€”", "—")
+            .replace("â€˜", "'")
+            .replace("â€™", "'")
+            .replace("â€œ", '"')
+            .replace("â€�", '"')
+            .replace("â", "→")
+    )
+
 import os
+from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pypdf import PdfReader
 from groq import Groq
+from dotenv import load_dotenv
 import json
+
+load_dotenv(Path(__file__).with_name(".env"))
 
 app = FastAPI()
 
@@ -96,3 +112,78 @@ async def get_flashcards():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # =========================
+# ✅ TUTOR SESSION (ADD BELOW)
+# =========================
+
+from typing import List
+
+# Store conversation history
+tutor_history: List[dict] = []
+
+
+class TutorRequest(BaseModel):
+    question: str
+
+
+@app.post("/tutor/ask/")
+async def tutor_ask(data: TutorRequest):
+    global tutor_history
+
+    try:
+        context = retrieve_relevant_chunks(data.question, top_k=3)
+
+        prompt = f"""
+You are a highly intelligent AI tutor.
+
+RULES:
+- Give ONLY the key answer
+- Do NOT copy full sentences from the material
+- Do NOT repeat the PDF text
+- Be short, clear, and exam-focused
+- Use bullet points if needed
+- Explain simply like ChatGPT tutor
+
+CONTEXT:
+{context}
+
+CHAT HISTORY:
+{tutor_history[-5:]}
+
+QUESTION:
+{data.question}
+
+FINAL ANSWER:
+"""
+
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a concise expert tutor. You explain only key points clearly."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            model="openai/gpt-oss-20b",
+            temperature=0.3,
+        )
+
+        answer = chat_completion.choices[0].message.content
+        answer = clean_text(answer)
+
+        tutor_history.append({
+            "question": data.question,
+            "answer": answer
+        })
+
+        return {"answer": answer}
+
+    except Exception as e:
+        print("Tutor Error:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/tutor/history/")
+async def get_tutor_history():
+    return tutor_history
