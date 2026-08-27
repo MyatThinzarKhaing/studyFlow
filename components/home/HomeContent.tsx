@@ -80,14 +80,10 @@ export function HomeContent() {
     const file = e.target.files?.[0]
     if (!file) return
 
-<<<<<<< Updated upstream
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-=======
     if (
       file.type !== 'application/pdf' &&
       !file.name.toLowerCase().endsWith('.pdf')
     ) {
->>>>>>> Stashed changes
       setErrorMessage('Please select a PDF file.')
       return
     }
@@ -96,9 +92,6 @@ export function HomeContent() {
     setErrorMessage(null)
 
     try {
-<<<<<<< Updated upstream
-      // 1. Extract text locally for sessionStorage (partner's tools)
-=======
       // -----------------------------------------------------
       // 0. CREATE AND SAVE OBJECT URL FOR THE NATIVE PDF VIEWER
       // -----------------------------------------------------
@@ -108,34 +101,16 @@ export function HomeContent() {
       // -----------------------------------------------------
       // 1. EXTRACT TEXT LOCALLY
       // -----------------------------------------------------
->>>>>>> Stashed changes
       let extractedText = ''
       try {
         const pdfToTextModule = await import('react-pdftotext')
-<<<<<<< Updated upstream
-        const pdfToText = pdfToTextModule.default || pdfToTextModule
-=======
         const pdfToText =
           pdfToTextModule.default || pdfToTextModule
->>>>>>> Stashed changes
         extractedText = await pdfToText(file)
       } catch (pdfErr) {
         console.error('[PDF] react-pdftotext warning:', pdfErr)
       }
 
-<<<<<<< Updated upstream
-      if (extractedText && extractedText.trim().length >= 10) {
-        sessionStorage.setItem('studyflow_pdf_text', extractedText)
-        sessionStorage.setItem('studyflow_pdf_name', file.name)
-      }
-
-      // 2. Send file to FastAPI backend (your flashcards/quiz endpoints)
-      await uploadPDF(file)
-
-      // 3. Save name references
-      localStorage.setItem('active_pdf_filename', file.name)
-      sessionStorage.setItem('studyflow_pdf_name', file.name)
-=======
       if (
         extractedText &&
         extractedText.trim().length >= 10
@@ -163,7 +138,6 @@ export function HomeContent() {
         'studyflow_pdf_name',
         file.name
       )
->>>>>>> Stashed changes
 
       setFileName(file.name)
       setUploaded(true)
@@ -175,10 +149,7 @@ export function HomeContent() {
 
       sessionStorage.removeItem('studyflow_pdf_text')
       sessionStorage.removeItem('studyflow_pdf_name')
-<<<<<<< Updated upstream
-=======
       sessionStorage.removeItem('studyflow_pdf_url') // Clean up url on error too
->>>>>>> Stashed changes
       localStorage.removeItem('active_pdf_filename')
 
       setUploaded(false)

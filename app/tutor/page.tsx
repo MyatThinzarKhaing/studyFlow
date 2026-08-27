@@ -2,10 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
-<<<<<<< Updated upstream
-import { ChatWindow } from '@/components/tutor/ChatWindow'
-export default function TutorPage(){return <AppShell><ChatWindow/></AppShell>}
-=======
 import ChatWindow from '@/components/tutor/ChatWindow'
 
 export default function TutorPage() {
@@ -27,4 +23,4 @@ export default function TutorPage() {
     </AppShell>
   )
 }
->>>>>>> Stashed changes
+
