@@ -97,10 +97,6 @@ export function HomeContent() {
 
     if (!file) return
 
-    // -------------------------------------------------------
-    // CHECK FILE TYPE
-    // -------------------------------------------------------
-
     if (
       file.type !== 'application/pdf' &&
       !file.name.toLowerCase().endsWith('.pdf')
@@ -114,17 +110,20 @@ export function HomeContent() {
 
     try {
       // -----------------------------------------------------
+      // 0. CREATE AND SAVE OBJECT URL FOR THE NATIVE PDF VIEWER
+      // -----------------------------------------------------
+      const fileUrl = URL.createObjectURL(file)
+      sessionStorage.setItem('studyflow_pdf_url', fileUrl)
+
+      // -----------------------------------------------------
       // 1. EXTRACT TEXT LOCALLY
       // -----------------------------------------------------
-
       let extractedText = ''
 
       try {
         const pdfToTextModule = await import('react-pdftotext')
-
         const pdfToText =
           pdfToTextModule.default || pdfToTextModule
-
         extractedText = await pdfToText(file)
       } catch (pdfErr) {
         console.error(
@@ -132,10 +131,6 @@ export function HomeContent() {
           pdfErr
         )
       }
-
-      // -----------------------------------------------------
-      // SAVE EXTRACTED TEXT
-      // -----------------------------------------------------
 
       if (
         extractedText &&
@@ -145,23 +140,16 @@ export function HomeContent() {
           'studyflow_pdf_text',
           extractedText
         )
-
-        sessionStorage.setItem(
-          'studyflow_pdf_name',
-          file.name
-        )
       }
 
       // -----------------------------------------------------
       // 2. SEND FILE TO FASTAPI BACKEND
       // -----------------------------------------------------
-
       await uploadPDF(file)
 
       // -----------------------------------------------------
       // 3. SAVE FILE NAME
       // -----------------------------------------------------
-
       localStorage.setItem(
         'active_pdf_filename',
         file.name
@@ -187,17 +175,10 @@ export function HomeContent() {
           : 'Failed to process the PDF.'
       )
 
-      sessionStorage.removeItem(
-        'studyflow_pdf_text'
-      )
-
-      sessionStorage.removeItem(
-        'studyflow_pdf_name'
-      )
-
-      localStorage.removeItem(
-        'active_pdf_filename'
-      )
+      sessionStorage.removeItem('studyflow_pdf_text')
+      sessionStorage.removeItem('studyflow_pdf_name')
+      sessionStorage.removeItem('studyflow_pdf_url') // Clean up url on error too
+      localStorage.removeItem('active_pdf_filename')
 
       setUploaded(false)
       setFileName('')
