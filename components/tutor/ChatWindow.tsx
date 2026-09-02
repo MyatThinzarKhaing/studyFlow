@@ -9,6 +9,8 @@ interface ChatWindowProps {
   fileName?: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 export default function ChatWindow({ pdfUrl = "", fileName = "document.pdf" }: ChatWindowProps) {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState("");
@@ -27,7 +29,7 @@ export default function ChatWindow({ pdfUrl = "", fileName = "document.pdf" }: C
 
   // Load history
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/tutor/history/")
+    fetch(`${API_URL}/tutor/history/`)
       .then((res) => res.json())
       .then((data) => {
         const formatted = data.flatMap((item: any) => [
@@ -87,7 +89,7 @@ export default function ChatWindow({ pdfUrl = "", fileName = "document.pdf" }: C
     setLoading(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/tutor/ask/", {
+      const res = await fetch(`${API_URL}/tutor/ask/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: text }),
