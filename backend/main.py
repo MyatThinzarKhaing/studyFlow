@@ -1,4 +1,42 @@
-from rag.retrieve import retrieve_relevant_chunks
+import os
+import json
+from pathlib import Path
+from typing import List
+
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from pypdf import PdfReader
+from groq import Groq
+from dotenv import load_dotenv
+
+# =========================
+# ENV
+# =========================
+load_dotenv(Path(__file__).with_name(".env"))
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+# =========================
+# STORAGE
+# =========================
+latest_flashcards = []
+pdf_chunks = []
+tutor_history: List[dict] = []
+
+# =========================
+# CLEAN TEXT
+# =========================
 def clean_text(text):
     return (
         text.replace("â€“", "—")
@@ -10,123 +48,118 @@ def clean_text(text):
             .replace("â", "→")
     )
 
-import os
-from pathlib import Path
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from pypdf import PdfReader
-from groq import Groq
-from dotenv import load_dotenv
-import json
+# =========================
+# CHUNKING
+# =========================
+def simple_chunk(text, chunk_size=800):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-load_dotenv(Path(__file__).with_name(".env"))
+# =========================
+# RETRIEVAL (FIXED RAG)
+# =========================
+def retrieve_relevant_chunks(query: str, top_k: int = 3):
+    if not pdf_chunks:
+        return "No document uploaded."
 
-app = FastAPI()
+    query_words = query.lower().split()
+    scored = []
 
-# Enable CORS so your Next.js frontend can communicate with FastAPI
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Update this with your frontend URL in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    for chunk in pdf_chunks:
+        score = sum(1 for w in query_words if w in chunk.lower())
+        scored.append((score, chunk))
 
-# Initialize Groq client (ensure GROQ_API_KEY is set in your environment variables)
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    scored.sort(reverse=True, key=lambda x: x[0])
 
-# In-memory storage for the latest generated flashcards (or use a database/cache)
-latest_flashcards = []
+    return "\n\n".join([c for _, c in scored[:top_k]])
 
+# =========================
+# MODELS
+# =========================
 class Flashcard(BaseModel):
     question: str
     answer: str
 
+class TutorRequest(BaseModel):
+    question: str
+
+# =========================
+# PDF UPLOAD + FLASHCARDS
+# =========================
 @app.post("/upload-pdf/")
 async def upload_pdf(file: UploadFile = File(...)):
-    global latest_flashcards
-    
+    global latest_flashcards, pdf_chunks
+
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-    
+
     try:
-        # Read PDF content using pypdf
         reader = PdfReader(file.file)
         text = ""
+
         for page in reader.pages:
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
-        
-        # Limit text size if necessary to fit context windows
-        trimmed_text = text[:15000] 
 
-        # Call Groq API to generate flashcards
-        prompt = (
-            "Based on the following text extracted from a PDF, generate a list of educational flashcards. "
-            "Return ONLY a valid JSON array of objects with 'question' and 'answer' keys. No extra markdown, no introduction.\n\n"
-            f"Text:\n{trimmed_text}"
-        )
+        trimmed_text = text[:15000]
+
+        # chunk for RAG
+        pdf_chunks = simple_chunk(text)
+
+        prompt = f"""
+Based on the following text, generate flashcards.
+Return ONLY JSON array with question & answer.
+
+Text:
+{trimmed_text}
+"""
 
         chat_completion = client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful study assistant that creates concise, high-quality flashcards in JSON format."
+                    "content": "You generate clean flashcards in JSON only."
                 },
                 {
                     "role": "user",
                     "content": prompt,
                 }
             ],
-            model="openai/gpt-oss-20b",  # Or your preferred Groq model
+            model="openai/gpt-oss-20b",
             temperature=0.3,
-            response_format={"type": "json_object"} # Depending on structure, or parse manually
+            response_format={"type": "json_object"}
         )
 
         response_content = chat_completion.choices[0].message.content
-        
-        # Parse the JSON response from Groq
-        parsed_data = json.loads(response_content)
-        
-        # Handle cases where model wraps it in an object like {"flashcards": [...]}
-        if isinstance(parsed_data, dict):
-            for key, value in parsed_data.items():
-                if isinstance(value, list):
-                    latest_flashcards = value
-                    break
-        elif isinstance(parsed_data, list):
-            latest_flashcards = parsed_data
+        parsed = json.loads(response_content)
 
-        return {"message": "PDF processed and flashcards generated successfully", "count": len(latest_flashcards)}
+        if isinstance(parsed, dict):
+            for v in parsed.values():
+                if isinstance(v, list):
+                    latest_flashcards = v
+                    break
+        elif isinstance(parsed, list):
+            latest_flashcards = parsed
+
+        return {
+            "message": "PDF processed successfully",
+            "flashcards": len(latest_flashcards)
+        }
 
     except Exception as e:
-        print(f"Error: {e}")
+        print("Upload Error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+# =========================
+# GET FLASHCARDS
+# =========================
 @app.get("/flashcards/")
 async def get_flashcards():
     return latest_flashcards
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-    # =========================
-# ✅ TUTOR SESSION (ADD BELOW)
 # =========================
-
-from typing import List
-
-# Store conversation history
-tutor_history: List[dict] = []
-
-
-class TutorRequest(BaseModel):
-    question: str
-
-
+# TUTOR CHAT
+# =========================
 @app.post("/tutor/ask/")
 async def tutor_ask(data: TutorRequest):
     global tutor_history
@@ -135,33 +168,30 @@ async def tutor_ask(data: TutorRequest):
         context = retrieve_relevant_chunks(data.question, top_k=3)
 
         prompt = f"""
-You are a highly intelligent AI tutor.
+You are an AI tutor.
 
 RULES:
-- Give ONLY the key answer
-- Do NOT copy full sentences from the material
-- Do NOT repeat the PDF text
-- Be short, clear, and exam-focused
-- Use bullet points if needed
-- Explain simply like ChatGPT tutor
+- Short answers only
+- Bullet points allowed
+- No copying long text
 
 CONTEXT:
 {context}
 
-CHAT HISTORY:
+HISTORY:
 {tutor_history[-5:]}
 
 QUESTION:
 {data.question}
 
-FINAL ANSWER:
+ANSWER:
 """
 
         chat_completion = client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a concise expert tutor. You explain only key points clearly."
+                    "content": "You are a concise tutor."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -183,7 +213,16 @@ FINAL ANSWER:
         print("Tutor Error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-
+# =========================
+# HISTORY
+# =========================
 @app.get("/tutor/history/")
 async def get_tutor_history():
     return tutor_history
+
+# =========================
+# RUN SERVER
+# =========================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
